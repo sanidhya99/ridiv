@@ -5,10 +5,10 @@ from .renderers import *
 from .models import *
 from rest_framework import generics,status
 
-class InvoiceCreateAPIView(generics.CreateAPIView):
+class InvoiceCreateAPIView(generics.ListCreateAPIView):
     serializer_class = InvoiceSerializer
     renderer_classes = [InvoiceRenderer,]
-
+    queryset=Invoice.objects.all()
     def post(self, request, *args, **kwargs):
 
         data = request.data
@@ -47,7 +47,8 @@ class InvoiceCreateAPIView(generics.CreateAPIView):
 class InvoiceRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = InvoiceSerializer
     renderer_classes = [InvoiceRenderer,]
-
+    lookup_field='id'
+    queryset=Invoice.objects.all()
     def get(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
@@ -59,23 +60,33 @@ class InvoiceRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView)
         return Response({"invoice": serializer.data, "invoice_details": invoice_details_serializer.data})
 
     def patch(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        
-        # Update associated InvoiceDetails if related fields are present in request data
-        if 'description' in request.data or 'quantity' in request.data or 'unit_price' in request.data or 'price' in request.data:
-            invoice_details = InvoiceDetails.objects.filter(invoice=instance)
-            invoice_details_data = {
-                'description': request.data.get('description', instance.invoice_details.description),
-                'quantity': request.data.get('quantity', instance.invoice_details.quantity),
-                'unit_price': request.data.get('unit_price', instance.invoice_details.unit_price),
-                'price': request.data.get('price', instance.invoice_details.price)
-            }
-            invoice_details_serializer = InvoiceDetailsSerializer(invoice_details, data=invoice_details_data, partial=partial)
-            if invoice_details_serializer.is_valid():
-                invoice_details_serializer.save()
-
-        return Response(serializer.data)
+        id = self.kwargs.get('id')
+        try:
+            invoice = Invoice.objects.get(id=id)
+            invoice_detail = InvoiceDetails.objects.get(invoice=invoice.pk)
+    
+            if "customer_name" in request.data:
+                customer_name = request.data.get('customer_name')
+                invoice.customer_name = customer_name
+            if "description" in request.data:
+                description = request.data.get('description')
+                invoice_detail.description = description
+            if "quantity" in request.data:
+                quantity = request.data.get('quantity')
+                invoice_detail.quantity = quantity
+            if "unit_price" in request.data:
+                unit_price = request.data.get('unit_price')
+                invoice_detail.unit_price = unit_price
+            if "price" in request.data:
+                price = request.data.get('price')
+                invoice_detail.price = price
+            
+            invoice_detail.save()
+            invoice.save()
+    
+            # Serialize the updated invoice object
+            serializer = InvoiceSerializer(invoice)
+            return Response(serializer.data)
+        except Invoice.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+           
